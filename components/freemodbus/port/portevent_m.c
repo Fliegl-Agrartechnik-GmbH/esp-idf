@@ -142,6 +142,15 @@ void vMBMasterOsResInit( void )
     MB_PORT_CHECK((xSemaphorMasterHdl != NULL), ; , "%s: OS semaphore create error.", __func__);
 }
 
+void eMBMasterCleanWaitBitsFinish( void ) {
+	            xEventGroupWaitBits( xEventGroupMasterHdl, // The event group being tested.
+                MB_EVENT_REQ_MASK + MB_EVENT_POLL_MASK,  // The bits within the event group to wait for.
+                pdTRUE,             // Masked bits should be cleared before returning.
+                pdFALSE,            // Don't wait for both bits, either bit will do.
+				5 );                // Wait 5 ticks
+}
+
+
 /**
  * This function is take Mobus Master running resource.
  * Note:The resource is define by Operating System.
@@ -158,6 +167,8 @@ BOOL xMBMasterRunResTake( LONG lTimeOut )
     xStatus = xSemaphoreTake(xSemaphorMasterHdl, lTimeOut );
     MB_PORT_CHECK((xStatus == pdTRUE), FALSE , "%s:Take resource failure.", __func__);
     ESP_LOGV(MB_PORT_TAG,"%s:Take resource (%lu ticks).", __func__, lTimeOut);
+	// If wee get the resource, we clean wait bits, so if there were events pending, we clean them */
+	eMBMasterCleanWaitBitsFinish( );
     return TRUE;
 }
 
