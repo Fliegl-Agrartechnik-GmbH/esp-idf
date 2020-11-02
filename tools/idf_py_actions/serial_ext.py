@@ -146,7 +146,7 @@ def action_extensions(base_actions, project_path):
         "help": "Baud rate for flashing.",
         "scope": "global",
         "envvar": "ESPBAUD",
-        "default": 460800,
+        "default": 1500000, #  460800, 1500000
     }
 
     port = {
