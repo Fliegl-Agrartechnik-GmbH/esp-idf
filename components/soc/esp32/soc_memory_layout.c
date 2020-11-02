@@ -71,6 +71,9 @@ const size_t soc_memory_type_count = sizeof(soc_memory_types)/sizeof(soc_memory_
 #if CONFIG_SPIRAM_SIZE == -1
 // Assume we need to reserve 4MB in the auto-detection case
 #define RESERVE_SPIRAM_SIZE (4*1024*1024)
+#elif CONFIG_SPIRAM_SIZE == (8*1024*1024)
+// Assume we need to reserve 4MB in the case the 8MB SPIRAM is populated
+#define RESERVE_SPIRAM_SIZE (4*1024*1024)
 #else
 #define RESERVE_SPIRAM_SIZE CONFIG_SPIRAM_SIZE
 #endif
