@@ -39,6 +39,7 @@ struct esp_https_ota_handle {
     size_t ota_upgrade_buf_size;
     int binary_file_len;
     esp_https_ota_state state;
+    bool bulk_flash_erase;
 };
 
 typedef struct esp_https_ota_handle esp_https_ota_t;
@@ -170,6 +171,14 @@ esp_err_t esp_https_ota_begin(esp_https_ota_config_t *ota_config, esp_https_ota_
         goto failure;
     }
 
+    if (ota_config->http_client_init_cb) {
+        err = ota_config->http_client_init_cb(https_ota_handle->http_client);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "http_client_init_cb returned %d", err);
+            goto failure;
+        }
+    }
+
     err = _http_connect(https_ota_handle->http_client);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to establish HTTP connection");
@@ -196,7 +205,7 @@ esp_err_t esp_https_ota_begin(esp_https_ota_config_t *ota_config, esp_https_ota_
         goto http_cleanup;
     }
     https_ota_handle->ota_upgrade_buf_size = alloc_size;
-
+    https_ota_handle->bulk_flash_erase = ota_config->bulk_flash_erase;
     https_ota_handle->binary_file_len = 0;
     *handle = (esp_https_ota_handle_t)https_ota_handle;
     https_ota_handle->state = ESP_HTTPS_OTA_BEGIN;
@@ -236,10 +245,10 @@ esp_err_t esp_https_ota_get_img_desc(esp_https_ota_handle_t https_ota_handle, es
                                           (handle->ota_upgrade_buf + bytes_read),
                                           data_read_size);
         /*
-         * As esp_http_client_read never returns negative error code, we rely on
+         * As esp_http_client_read doesn't return negative error code if select fails, we rely on
          * `errno` to check for underlying transport connectivity closure if any
          */
-        if (errno == ENOTCONN || errno == ECONNRESET || errno == ECONNABORTED) {
+        if (errno == ENOTCONN || errno == ECONNRESET || errno == ECONNABORTED || data_read < 0) {
             ESP_LOGE(TAG, "Connection closed, errno = %d", errno);
             break;
         }
@@ -269,9 +278,10 @@ esp_err_t esp_https_ota_perform(esp_https_ota_handle_t https_ota_handle)
 
     esp_err_t err;
     int data_read;
+    const int erase_size = handle->bulk_flash_erase ? OTA_SIZE_UNKNOWN : OTA_WITH_SEQUENTIAL_WRITES;
     switch (handle->state) {
         case ESP_HTTPS_OTA_BEGIN:
-            err = esp_ota_begin(handle->update_partition, OTA_SIZE_UNKNOWN, &handle->update_handle);
+            err = esp_ota_begin(handle->update_partition, erase_size, &handle->update_handle);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
                 return err;
@@ -295,7 +305,7 @@ esp_err_t esp_https_ota_perform(esp_https_ota_handle_t https_ota_handle)
                  */
                 bool is_recv_complete = esp_https_ota_is_complete_data_received(https_ota_handle);
                 /*
-                 * As esp_http_client_read never returns negative error code, we rely on
+                 * As esp_http_client_read doesn't return negative error code if select fails, we rely on
                  * `errno` to check for underlying transport connectivity closure if any.
                  * Incase the complete data has not been received but the server has sent
                  * an ENOTCONN or ECONNRESET, failure is returned. We close with success
@@ -310,6 +320,8 @@ esp_err_t esp_https_ota_perform(esp_https_ota_handle_t https_ota_handle)
                 ESP_LOGI(TAG, "Connection closed");
             } else if (data_read > 0) {
                 return _ota_write(handle, (const void *)handle->ota_upgrade_buf, data_read);
+            } else {
+                return ESP_FAIL;
             }
             handle->state = ESP_HTTPS_OTA_SUCCESS;
             break;
